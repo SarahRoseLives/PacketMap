@@ -1,6 +1,6 @@
 [station]
 callsign = "ad8nt"
-gridsquare = "EN91"
+gridsquare = "EN91" # Home location and APRSIS Filter
 
 [map]
 defaultzoom = 12.8
