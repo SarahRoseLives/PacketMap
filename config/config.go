@@ -6,23 +6,31 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// --- NEW ---
 // MapConfig holds map-specific settings
 type MapConfig struct {
 	DefaultZoom float64 `toml:"defaultzoom"`
 }
 
-// Config holds all application configuration
-type Config struct {
-	Station StationConfig `toml:"station"`
-	Map     MapConfig     `toml:"map"` // --- ADDED ---
-}
-
 // StationConfig holds settings specific to the user's station
 type StationConfig struct {
 	Callsign   string `toml:"callsign"`
-	Passcode   int    `toml:"passcode"`
 	GridSquare string `toml:"gridsquare"`
+	// Passcode removed from here
+}
+
+// --- NEW ---
+// InterfaceConfig holds settings for the TNC/network connection
+type InterfaceConfig struct {
+	Type     string `toml:"type"`
+	Device   string `toml:"device"`
+	Passcode int    `toml:"passcode"`
+}
+
+// Config holds all application configuration
+type Config struct {
+	Station   StationConfig   `toml:"station"`
+	Map       MapConfig       `toml:"map"`
+	Interface InterfaceConfig `toml:"interface"` // --- ADDED ---
 }
 
 // LoadConfig reads the configuration from the specified path

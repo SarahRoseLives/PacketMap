@@ -3,7 +3,8 @@ package main
 import (
 	"log"
 
-	"packetmap/config" // Already imported
+	"packetmap/config"
+	"packetmap/device/kiss" // --- NEW: Import kiss package ---
 	"packetmap/ui/footer"
 	mapview "packetmap/ui/map"
 
@@ -28,7 +29,6 @@ type model struct {
 // initialModel creates the starting model
 // It now accepts the loaded config
 func initialModel(conf config.Config) model {
-	// --- UPDATED ---
 	// Create the map model, passing the entire config
 	mapMod, err := mapview.New(mapShapePath, conf)
 	if err != nil {
@@ -119,7 +119,7 @@ func (m model) View() string {
 			Padding(1).
 			Align(lipgloss.Center, lipgloss.Center)
 		return errorStyle.Render(
-			"Error loading map:\n\n" + m.err.Error() +
+			"Error:\n\n" + m.err.Error() + // Simplified error view
 				"\n\nPress any key to quit.",
 		)
 	}
@@ -140,7 +140,17 @@ func main() {
 		log.Fatalf("Failed to load config.toml: %v", err)
 	}
 
-	// Pass the loaded config to the initial model
+	// --- NEW: Attempt to connect to TNC ---
+	// We pass the Interface part of the config
+	kissClient, err := kiss.Connect(conf.Interface)
+	if err != nil {
+		// If connection fails, we must exit
+		log.Fatalf("Failed to connect to interface: %v", err)
+	}
+	// On exit, ensure we close the connection
+	defer kissClient.Close()
+
+	// --- Pass the loaded config to the initial model ---
 	p := tea.NewProgram(initialModel(conf), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("Alas, there's been an error: %v", err)
