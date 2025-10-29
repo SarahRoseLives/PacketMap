@@ -1,0 +1,7 @@
+[station]
+callsign = "ad8nt"
+passcode = 24296
+gridsquare = "EN91"
+
+[map]
+defaultzoom = 12.8
