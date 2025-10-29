@@ -14,30 +14,27 @@ import (
 
 // Constants for Panning and Zooming
 const (
-	panFactor  = 0.1 // Pan 10% of the current view width/height
-	zoomFactor = 1.2 // Zoom in/out by 20%
+	panFactor  = 0.1
+	zoomFactor = 1.2
 )
-
-// --- REMOVED: type newPacketMsg *packet.Packet ---
-// This type is now defined in main.go
 
 // Model holds the map's state
 type Model struct {
-	width  int // Viewport width
-	height int // Viewport height
+	width  int
+	height int
 
-	mapPolygons    []*shp.Polygon // Polygons from shapefile
-	originalBounds shp.Box        // The bounds of the entire map, never changes
-	viewBounds     shp.Box        // The bounds of the current viewport (pans and zooms)
+	mapPolygons    []*shp.Polygon
+	originalBounds shp.Box
+	viewBounds     shp.Box
 
-	stationLon    float64 // Station Longitude (X)
-	stationLat    float64 // Station Latitude (Y)
-	stationExists bool    // Flag if station grid was loaded successfully
+	stationLon    float64
+	stationLat    float64
+	stationExists bool
 
 	plottedPackets []*packet.Packet
 }
 
-// loadMapData reads the shapefile... (NO CHANGES)
+// loadMapData reads the shapefile
 func loadMapData(path string) ([]*shp.Polygon, shp.Box, error) {
 	shapeFile, err := shp.Open(path)
 	if err != nil {
@@ -46,12 +43,7 @@ func loadMapData(path string) ([]*shp.Polygon, shp.Box, error) {
 	defer shapeFile.Close()
 
 	var polygons []*shp.Polygon
-	bounds := shp.Box{
-		MinX: 1e9,
-		MinY: 1e9,
-		MaxX: -1e9,
-		MaxY: -1e9,
-	}
+	bounds := shp.Box{MinX: 1e9, MinY: 1e9, MaxX: -1e9, MaxY: -1e9}
 
 	for shapeFile.Next() {
 		_, shape := shapeFile.Shape()
@@ -60,32 +52,21 @@ func loadMapData(path string) ([]*shp.Polygon, shp.Box, error) {
 			continue
 		}
 		polygons = append(polygons, polygon)
-
-		// Compute bounding box manually
 		for _, p := range polygon.Points {
-			if p.X < bounds.MinX {
-				bounds.MinX = p.X
-			}
-			if p.X > bounds.MaxX {
-				bounds.MaxX = p.X
-			}
-			if p.Y < bounds.MinY {
-				bounds.MinY = p.Y
-			}
-			if p.Y > bounds.MaxY {
-				bounds.MaxY = p.Y
-			}
+			if p.X < bounds.MinX { bounds.MinX = p.X }
+			if p.X > bounds.MaxX { bounds.MaxX = p.X }
+			if p.Y < bounds.MinY { bounds.MinY = p.Y }
+			if p.Y > bounds.MaxY { bounds.MaxY = p.Y }
 		}
 	}
 
 	if len(polygons) == 0 {
 		return nil, shp.Box{}, fmt.Errorf("no polygons found in shapefile")
 	}
-
 	return polygons, bounds, nil
 }
 
-// New creates a new map model (NO CHANGES)
+// New creates a new map model
 func New(mapShapePath string, conf config.Config) (Model, error) {
 	polygons, bounds, err := loadMapData(mapShapePath)
 	if err != nil {
@@ -94,15 +75,14 @@ func New(mapShapePath string, conf config.Config) (Model, error) {
 
 	m := Model{
 		mapPolygons:    polygons,
-		originalBounds: bounds, // Store the original bounds
-		viewBounds:     bounds, // The view starts fully zoomed out
-		width:          80,     // Default width
-		height:         23,     // Default height (24 - 1 for footer)
-		stationExists:  false,  // Default
+		originalBounds: bounds,
+		viewBounds:     bounds,
+		width:          80,
+		height:         23,
+		stationExists:  false,
 		plottedPackets: make([]*packet.Packet, 0),
 	}
 
-	// Try to parse the gridsquare from config
 	stationGrid := conf.Station.GridSquare
 	if stationGrid != "" {
 		lon, lat, err := GridSquareToLatLon(stationGrid)
@@ -115,20 +95,13 @@ func New(mapShapePath string, conf config.Config) (Model, error) {
 		}
 	}
 
-	// Set initial view based on config
 	if m.stationExists && conf.Map.DefaultZoom > 1.0 {
 		m.setCenterAndZoom(m.stationLon, m.stationLat, conf.Map.DefaultZoom)
 	}
-
 	return m, nil
 }
 
-// Init, setCenterAndZoom, zoomByFactor, pan, GetZoomLevel...
-// (NO CHANGES to these functions)
-
-func (m Model) Init() tea.Cmd {
-	return nil
-}
+func (m Model) Init() tea.Cmd { return nil }
 
 func (m *Model) setCenterAndZoom(lon, lat, zoomLevel float64) {
 	newWidth := (m.originalBounds.MaxX - m.originalBounds.MinX) / zoomLevel
@@ -168,22 +141,22 @@ func (m *Model) pan(dx, dy float64) {
 }
 
 func (m Model) GetZoomLevel() float64 {
-	if m.viewBounds.MaxX == m.viewBounds.MinX {
-		return 1.0
-	}
+	if m.viewBounds.MaxX == m.viewBounds.MinX { return 1.0 }
 	return (m.originalBounds.MaxX - m.originalBounds.MinX) / (m.viewBounds.MaxX - m.viewBounds.MinX)
 }
 
-// Update function (NO CHANGES)
-// Note: It's okay that this case is `interface{}`. Go will match it.
+// Update function
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case *packet.Packet: // Handle the packet message
-		// We could just append, but let's replace if we already have it
+	case *packet.Packet:
+		// --- DEBUG LOG REMOVED ---
+		// log.Printf("Map Update: Received packet: %s (%.3f, %.3f)", msg.Callsign, msg.Lat, msg.Lon)
+		// --- END DEBUG LOG REMOVAL ---
+
 		found := false
 		for i, pkt := range m.plottedPackets {
 			if pkt.Callsign == msg.Callsign {
-				m.plottedPackets[i] = msg // Update position
+				m.plottedPackets[i] = msg
 				found = true
 				break
 			}
@@ -194,56 +167,37 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
-		m.height = msg.Height // This is the height *given* by the parent
+		m.height = msg.Height
 
 	case tea.KeyMsg:
 		switch msg.String() {
-		// Panning
-		case "k", "up":
-			m.pan(0, panFactor)
-		case "l", "down":
-			m.pan(0, -panFactor)
-		case "j", "left":
-			m.pan(-panFactor, 0)
-		case ";", "right":
-			m.pan(panFactor, 0)
-		// Zooming
-		case "K":
-			m.zoomByFactor(1 / zoomFactor)
-		case "L":
-			m.zoomByFactor(zoomFactor)
-		// Reset
-		case "r":
-			m.viewBounds = m.originalBounds
+		case "k", "up": m.pan(0, panFactor)
+		case "l", "down": m.pan(0, -panFactor)
+		case "j", "left": m.pan(-panFactor, 0)
+		case ";", "right": m.pan(panFactor, 0)
+		case "K": m.zoomByFactor(1 / zoomFactor)
+		case "L": m.zoomByFactor(zoomFactor)
+		case "r": m.viewBounds = m.originalBounds
 		}
 	}
-
 	return m, nil
 }
 
-// project converts lon/lat to terminal x/y coordinates (NO CHANGES)
+// project converts lon/lat to terminal x/y coordinates
 func (m *Model) project(lon, lat float64, viewWidth, viewHeight int) (int, int) {
-	if m.viewBounds.MaxX == m.viewBounds.MinX {
-		m.viewBounds.MaxX += 1e-6
-	}
-	if m.viewBounds.MaxY == m.viewBounds.MinY {
-		m.viewBounds.MaxY += 1e-6
-	}
+	if m.viewBounds.MaxX == m.viewBounds.MinX { m.viewBounds.MaxX += 1e-6 }
+	if m.viewBounds.MaxY == m.viewBounds.MinY { m.viewBounds.MaxY += 1e-6 }
 	x := (lon - m.viewBounds.MinX) / (m.viewBounds.MaxX - m.viewBounds.MinX)
-	y := (m.viewBounds.MaxY - lat) / (m.viewBounds.MaxY - m.viewBounds.MinY)
+	y := (m.viewBounds.MaxY - lat) / (m.viewBounds.MaxY - m.viewBounds.MinY) // Invert Y-axis for screen coords
 	tuiX := int(x * float64(viewWidth))
 	tuiY := int(y * float64(viewHeight))
 	return tuiX, tuiY
 }
 
-// renderMapViewport (NO CHANGES)
+// renderMapViewport
 func (m Model) renderMapViewport(viewWidth, viewHeight int) string {
-	if viewWidth <= 0 {
-		viewWidth = 1
-	}
-	if viewHeight <= 0 {
-		viewHeight = 1
-	}
+	if viewWidth <= 0 { viewWidth = 1 }
+	if viewHeight <= 0 { viewHeight = 1 }
 
 	grid := make([][]rune, viewHeight)
 	for i := range grid {
@@ -256,13 +210,10 @@ func (m Model) renderMapViewport(viewWidth, viewHeight int) string {
 	// 1. Draw the map
 	for _, polygon := range m.mapPolygons {
 		polyBounds := polygon.BBox()
-		if polyBounds.MaxX < m.viewBounds.MinX ||
-			polyBounds.MinX > m.viewBounds.MaxX ||
-			polyBounds.MaxY < m.viewBounds.MinY ||
-			polyBounds.MinY > m.viewBounds.MaxY {
+		if polyBounds.MaxX < m.viewBounds.MinX || polyBounds.MinX > m.viewBounds.MaxX ||
+			polyBounds.MaxY < m.viewBounds.MinY || polyBounds.MinY > m.viewBounds.MaxY {
 			continue
 		}
-
 		for _, point := range polygon.Points {
 			x, y := m.project(point.X, point.Y, viewWidth, viewHeight)
 			if x >= 0 && x < viewWidth && y >= 0 && y < viewHeight {
@@ -275,33 +226,38 @@ func (m Model) renderMapViewport(viewWidth, viewHeight int) string {
 	if m.stationExists {
 		x, y := m.project(m.stationLon, m.stationLat, viewWidth, viewHeight)
 		if x >= 0 && x < viewWidth && y >= 0 && y < viewHeight {
-			grid[y][x] = 'H' // 'H' for Home/House
+			grid[y][x] = 'H'
 		}
 	}
 
-	// 3. Draw the packets and callsigns (drawn last, so they're on top)
+	// 3. Draw the packets and callsigns
 	for _, pkt := range m.plottedPackets {
 		x, y := m.project(pkt.Lon, pkt.Lat, viewWidth, viewHeight)
+
+		// --- DEBUG LOG REMOVED ---
+		// log.Printf("Map Render: Projecting %s (%.3f, %.3f) to screen (%d, %d)", pkt.Callsign, pkt.Lat, pkt.Lon, x, y)
+		// --- END DEBUG LOG REMOVAL ---
+
 		if x >= 0 && x < viewWidth && y >= 0 && y < viewHeight {
 			grid[y][x] = '*' // Plot the packet position
 
-			// Draw callsign UNDER the packet
-			if y+1 < viewHeight { // Check if we have space below
+			// Draw callsign UNDER the packet, if there's room
+			if y+1 < viewHeight {
 				callRunes := []rune(pkt.Callsign)
-				// Center the callsign under the '*'
 				startOffset := x - (len(callRunes) / 2)
-
 				for i := 0; i < len(callRunes); i++ {
 					plotX := startOffset + i
-					// Check horizontal bounds
 					if plotX >= 0 && plotX < viewWidth {
-						// Only write over empty space
 						if grid[y+1][plotX] == ' ' {
 							grid[y+1][plotX] = callRunes[i]
 						}
 					}
 				}
 			}
+		} else {
+			// --- DEBUG LOG REMOVED ---
+			// log.Printf("Map Render: Packet %s projected outside viewport (%d, %d)", pkt.Callsign, x, y)
+			// --- END DEBUG LOG REMOVAL ---
 		}
 	}
 
@@ -313,7 +269,7 @@ func (m Model) renderMapViewport(viewWidth, viewHeight int) string {
 	return b.String()
 }
 
-// View function (NO CHANGES)
+// View function
 func (m Model) View() string {
 	mapStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -329,12 +285,8 @@ func (m Model) View() string {
 	mapViewWidth := mapStyle.GetWidth() - hBorders - hPadding
 	mapViewHeight := mapStyle.GetHeight() - vBorders - vPadding
 
-	if mapViewWidth <= 0 {
-		mapViewWidth = 1
-	}
-	if mapViewHeight <= 0 {
-		mapViewHeight = 1
-	}
+	if mapViewWidth <= 0 { mapViewWidth = 1 }
+	if mapViewHeight <= 0 { mapViewHeight = 1 }
 
 	mapContent := m.renderMapViewport(mapViewWidth, mapViewHeight)
 

@@ -1,14 +1,16 @@
 package main
 
 import (
+	"fmt" // Import fmt
 	"log"
-
 	"packetmap/config"
+	"packetmap/device/aprsis" // --- NEW ---
 	"packetmap/device/kiss"
 	"packetmap/packet"
 	"packetmap/ui/footer"
 	mapview "packetmap/ui/map"
 	"packetmap/ui/sidebar"
+	"strings" // Import strings
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -17,8 +19,13 @@ import (
 // mapShapePath is the path to your downloaded shapefile
 const mapShapePath = "mapdata/ne_10m_admin_1_states_provinces.shp"
 
-// --- REMOVED: type newPacketMsg *packet.Packet ---
-// We will use *packet.Packet directly
+// --- NEW: Interface for device clients ---
+// This allows main.go to handle either KISS or APRSIS clients
+type PacketClient interface {
+	Start(chan<- *packet.Packet)
+	Close()
+	// Add SetFilter later if needed: SetFilter(filter string) error
+}
 
 // --- Constants for Layout ---
 const sidebarWidth = 20
@@ -32,14 +39,14 @@ type model struct {
 	footerModel  footer.Model  // The footer component
 	sidebarModel sidebar.Model
 
-	kissClient *kiss.Client
-	packetChan chan *packet.Packet
+	packetClient PacketClient // --- UPDATED: Use interface type ---
+	packetChan   chan *packet.Packet
 
 	err error // Store any errors
 }
 
 // initialModel creates the starting model
-func initialModel(conf config.Config, client *kiss.Client, pChan chan *packet.Packet) model {
+func initialModel(conf config.Config, client PacketClient, pChan chan *packet.Packet) model {
 	// Create the map model, passing the entire config
 	mapMod, err := mapview.New(mapShapePath, conf)
 	if err != nil {
@@ -56,7 +63,7 @@ func initialModel(conf config.Config, client *kiss.Client, pChan chan *packet.Pa
 		mapModel:     mapMod,
 		footerModel:  footerMod,
 		sidebarModel: sidebarMod,
-		kissClient:   client,
+		packetClient: client, // --- UPDATED ---
 		packetChan:   pChan,
 	}
 }
@@ -67,16 +74,16 @@ func (m model) listenForPackets() tea.Cmd {
 		pkt := <-m.packetChan // Wait for a packet
 		if pkt == nil {
 			// Channel was closed
-			return nil
+			// --- NEW: Send error message ---
+			return fmt.Errorf("connection closed")
 		}
-		// --- FIX: Return the packet directly, not the aliased type ---
 		return pkt
 	}
 }
 
 func (m model) Init() tea.Cmd {
 	// Start the TNC client in a goroutine
-	go m.kissClient.Start(m.packetChan)
+	go m.packetClient.Start(m.packetChan) // --- UPDATED ---
 	// Return the *first* listening command
 	return m.listenForPackets()
 }
@@ -98,7 +105,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	)
 
 	switch msg := msg.(type) {
-	// --- FIX: Case now handles the *packet.Packet type directly ---
 	case *packet.Packet:
 		// Send packet to all three children
 		m.mapModel, mapCmd = m.mapModel.Update(msg)
@@ -109,23 +115,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// *** CRUCIAL: Re-queue the listener to wait for the *next* packet ***
 		cmds = append(cmds, m.listenForPackets())
 
+	// --- NEW: Handle connection closed error ---
+	case error:
+		m.err = msg // Store the error to display it
+		log.Printf("Error received in Update: %v", msg) // Also log it
+		return m, tea.Quit                           // Quit on connection error
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// --- UPDATED LAYOUT LOGIC ---
+		// Layout Logic
 		footerHeight := 1
-		mainHeight := m.height - footerHeight // Height for map and sidebar
+		mainHeight := m.height - footerHeight
 		mapWidth := m.width - sidebarWidth
 
-		// Send resized messages to children
+		// Send resized messages
 		sidebarMsg := tea.WindowSizeMsg{Width: sidebarWidth, Height: mainHeight}
 		m.sidebarModel, sidebarCmd = m.sidebarModel.Update(sidebarMsg)
 
 		mapMsg := tea.WindowSizeMsg{Width: mapWidth, Height: mainHeight}
 		m.mapModel, mapCmd = m.mapModel.Update(mapMsg)
 
-		// Footer gets FULL width
 		footerMsg := tea.WindowSizeMsg{Width: m.width, Height: footerHeight}
 		m.footerModel, footerCmd = m.footerModel.Update(footerMsg)
 
@@ -136,16 +147,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c", "esc":
 			return m, tea.Quit
 		default:
-			// Pass all other keys to the map model
+			// Pass keys to the map model
 			m.mapModel, mapCmd = m.mapModel.Update(msg)
 			cmds = append(cmds, mapCmd)
-
-			// Sync footer zoom level after map update
 			m.footerModel.SetZoom(m.mapModel.GetZoomLevel())
 		}
 
 	default:
-		// Pass any other messages to children (e.g., mouse)
+		// Pass other messages
 		m.mapModel, mapCmd = m.mapModel.Update(msg)
 		m.footerModel, footerCmd = m.footerModel.Update(msg)
 		m.sidebarModel, sidebarCmd = m.sidebarModel.Update(msg)
@@ -156,7 +165,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	// --- Error View ---
+	// Error View
 	if m.err != nil {
 		errorStyle := lipgloss.NewStyle().
 			Width(m.width).
@@ -171,20 +180,18 @@ func (m model) View() string {
 		)
 	}
 
-	// --- UPDATED: Horizontal Layout View ---
-
-	// 1. Get the views from the children
+	// Normal View
 	sidebarView := m.sidebarModel.View()
 	mapView := m.mapModel.View()
 	footerView := m.footerModel.View()
 
-	// 2. Stack the sidebar and map horizontally
+	// Stack sidebar and map horizontally
 	topStack := lipgloss.JoinHorizontal(lipgloss.Top,
 		sidebarView,
 		mapView,
 	)
 
-	// 3. Join the top stack and the footer vertically
+	// Join top stack and footer vertically
 	return lipgloss.JoinVertical(lipgloss.Left,
 		topStack,
 		footerView,
@@ -192,24 +199,36 @@ func (m model) View() string {
 }
 
 func main() {
-	// --- Load Config First ---
+	// Load Config
 	conf, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load config.toml: %v", err)
 	}
 
-	// --- Attempt to connect to TNC ---
-	kissClient, err := kiss.Connect(conf.Interface)
-	if err != nil {
-		log.Fatalf("Failed to connect to interface: %v", err)
-	}
-	defer kissClient.Close()
+	// --- UPDATED: Connect based on config type ---
+	var packetClient PacketClient // Use the interface
+	var connectErr error
 
-	// --- Create the packet channel ---
+	switch strings.ToUpper(conf.Interface.Type) {
+	case "KISS":
+		packetClient, connectErr = kiss.Connect(conf.Interface)
+	case "APRSIS":
+		// APRSIS Connect needs the full config to get callsign
+		packetClient, connectErr = aprsis.Connect(conf)
+	default:
+		connectErr = fmt.Errorf("unknown interface type in config: %s", conf.Interface.Type)
+	}
+
+	if connectErr != nil {
+		log.Fatalf("Failed to connect to interface: %v", connectErr)
+	}
+	defer packetClient.Close() // Close whichever client we connected
+
+	// Create packet channel
 	packetChan := make(chan *packet.Packet)
 
-	// --- Pass client and channel to the initial model ---
-	p := tea.NewProgram(initialModel(conf, kissClient, packetChan), tea.WithAltScreen())
+	// Run Bubble Tea
+	p := tea.NewProgram(initialModel(conf, packetClient, packetChan), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("Alas, there's been an error: %v", err)
 	}

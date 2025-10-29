@@ -6,6 +6,6 @@ gridsquare = "EN91"
 defaultzoom = 12.8
 
 [interface]
-type = "KISS" # KISS or APRSIS
+type = "APRSIS" # KISS or APRSIS
 device = "192.168.1.243:8001" # blank for APRSIS / Could be serial path or ip:port for KISS
-passcode = 24296 # only required for APRSIS otherwise ignored
+passcode = 24296 # required only for APRSIS
