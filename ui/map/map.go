@@ -3,7 +3,8 @@ package mapview
 import (
 	"fmt"
 	"log"
-	"packetmap/config" // Import config
+	"packetmap/config"
+	"packetmap/packet"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -17,6 +18,9 @@ const (
 	zoomFactor = 1.2 // Zoom in/out by 20%
 )
 
+// --- REMOVED: type newPacketMsg *packet.Packet ---
+// This type is now defined in main.go
+
 // Model holds the map's state
 type Model struct {
 	width  int // Viewport width
@@ -29,9 +33,11 @@ type Model struct {
 	stationLon    float64 // Station Longitude (X)
 	stationLat    float64 // Station Latitude (Y)
 	stationExists bool    // Flag if station grid was loaded successfully
+
+	plottedPackets []*packet.Packet
 }
 
-// loadMapData reads the shapefile and computes bounding box manually
+// loadMapData reads the shapefile... (NO CHANGES)
 func loadMapData(path string) ([]*shp.Polygon, shp.Box, error) {
 	shapeFile, err := shp.Open(path)
 	if err != nil {
@@ -79,7 +85,7 @@ func loadMapData(path string) ([]*shp.Polygon, shp.Box, error) {
 	return polygons, bounds, nil
 }
 
-// New creates a new map model
+// New creates a new map model (NO CHANGES)
 func New(mapShapePath string, conf config.Config) (Model, error) {
 	polygons, bounds, err := loadMapData(mapShapePath)
 	if err != nil {
@@ -93,6 +99,7 @@ func New(mapShapePath string, conf config.Config) (Model, error) {
 		width:          80,     // Default width
 		height:         23,     // Default height (24 - 1 for footer)
 		stationExists:  false,  // Default
+		plottedPackets: make([]*packet.Packet, 0),
 	}
 
 	// Try to parse the gridsquare from config
@@ -116,98 +123,96 @@ func New(mapShapePath string, conf config.Config) (Model, error) {
 	return m, nil
 }
 
+// Init, setCenterAndZoom, zoomByFactor, pan, GetZoomLevel...
+// (NO CHANGES to these functions)
+
 func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-// setCenterAndZoom sets the view to a specific center point and absolute zoom level
 func (m *Model) setCenterAndZoom(lon, lat, zoomLevel float64) {
-	// Calculate new dimensions based on original bounds and zoom level
 	newWidth := (m.originalBounds.MaxX - m.originalBounds.MinX) / zoomLevel
 	newHeight := (m.originalBounds.MaxY - m.originalBounds.MinY) / zoomLevel
-
-	// Set new bounds centered on the given lon/lat
 	m.viewBounds.MinX = lon - (newWidth / 2)
 	m.viewBounds.MaxX = lon + (newWidth / 2)
 	m.viewBounds.MinY = lat - (newHeight / 2)
 	m.viewBounds.MaxY = lat + (newHeight / 2)
 }
 
-// zoomByFactor zooms the viewBounds in or out, centered on the current view
 func (m *Model) zoomByFactor(factor float64) {
-	// Get current center and dimensions
 	centerX := (m.viewBounds.MinX + m.viewBounds.MaxX) / 2
 	centerY := (m.viewBounds.MinY + m.viewBounds.MaxY) / 2
 	width := m.viewBounds.MaxX - m.viewBounds.MinX
 	height := m.viewBounds.MaxY - m.viewBounds.MinY
-
-	// Calculate new dimensions
 	newWidth := width * factor
 	newHeight := height * factor
-
-	// Don't zoom out further than the original map
 	if newWidth > (m.originalBounds.MaxX-m.originalBounds.MinX) || newHeight > (m.originalBounds.MaxY-m.originalBounds.MinY) {
 		m.viewBounds = m.originalBounds
 		return
 	}
-
-	// Set new bounds centered on the same point
 	m.viewBounds.MinX = centerX - (newWidth / 2)
 	m.viewBounds.MaxX = centerX + (newWidth / 2)
 	m.viewBounds.MinY = centerY - (newHeight / 2)
 	m.viewBounds.MaxY = centerY + (newHeight / 2)
 }
 
-// pan moves the viewBounds
 func (m *Model) pan(dx, dy float64) {
 	width := m.viewBounds.MaxX - m.viewBounds.MinX
 	height := m.viewBounds.MaxY - m.viewBounds.MinY
-
-	// Calculate pan delta
 	panX := width * dx
 	panY := height * dy
-
-	// Apply pan
 	m.viewBounds.MinX += panX
 	m.viewBounds.MaxX += panX
 	m.viewBounds.MinY += panY
 	m.viewBounds.MaxY += panY
 }
 
-// GetZoomLevel returns the current zoom factor
 func (m Model) GetZoomLevel() float64 {
-	// Avoid divide by zero
 	if m.viewBounds.MaxX == m.viewBounds.MinX {
 		return 1.0
 	}
 	return (m.originalBounds.MaxX - m.originalBounds.MinX) / (m.viewBounds.MaxX - m.viewBounds.MinX)
 }
 
+// Update function (NO CHANGES)
+// Note: It's okay that this case is `interface{}`. Go will match it.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case *packet.Packet: // Handle the packet message
+		// We could just append, but let's replace if we already have it
+		found := false
+		for i, pkt := range m.plottedPackets {
+			if pkt.Callsign == msg.Callsign {
+				m.plottedPackets[i] = msg // Update position
+				found = true
+				break
+			}
+		}
+		if !found {
+			m.plottedPackets = append(m.plottedPackets, msg)
+		}
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height // This is the height *given* by the parent
 
 	case tea.KeyMsg:
 		switch msg.String() {
-		// --- Panning ---
+		// Panning
 		case "k", "up":
-			m.pan(0, panFactor) // Pan Up (move map down, so increase Y)
+			m.pan(0, panFactor)
 		case "l", "down":
-			m.pan(0, -panFactor) // Pan Down (move map up, so decrease Y)
+			m.pan(0, -panFactor)
 		case "j", "left":
-			m.pan(-panFactor, 0) // Pan Left (move map right, so decrease X)
+			m.pan(-panFactor, 0)
 		case ";", "right":
-			m.pan(panFactor, 0) // Pan Right (move map left, so increase X)
-
-		// --- Zooming ---
-		case "K": // Zoom In (Shift+k)
-			m.zoomByFactor(1 / zoomFactor) // Zoom in (divide by factor)
-		case "L": // Zoom Out (Shift+l)
-			m.zoomByFactor(zoomFactor) // Zoom out (multiply by factor)
-
-		// --- Reset ---
+			m.pan(panFactor, 0)
+		// Zooming
+		case "K":
+			m.zoomByFactor(1 / zoomFactor)
+		case "L":
+			m.zoomByFactor(zoomFactor)
+		// Reset
 		case "r":
 			m.viewBounds = m.originalBounds
 		}
@@ -216,73 +221,87 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// project converts lon/lat to terminal x/y coordinates
+// project converts lon/lat to terminal x/y coordinates (NO CHANGES)
 func (m *Model) project(lon, lat float64, viewWidth, viewHeight int) (int, int) {
-	// Project based on the *current viewBounds*, not the original bounds
-
-	// Avoid divide by zero if perfectly zoomed in
 	if m.viewBounds.MaxX == m.viewBounds.MinX {
 		m.viewBounds.MaxX += 1e-6
 	}
 	if m.viewBounds.MaxY == m.viewBounds.MinY {
 		m.viewBounds.MaxY += 1e-6
 	}
-
-	// Normalize coordinates to [0, 1] based on the current view
 	x := (lon - m.viewBounds.MinX) / (m.viewBounds.MaxX - m.viewBounds.MinX)
 	y := (m.viewBounds.MaxY - lat) / (m.viewBounds.MaxY - m.viewBounds.MinY)
-
-	// Scale to TUI dimensions
 	tuiX := int(x * float64(viewWidth))
 	tuiY := int(y * float64(viewHeight))
 	return tuiX, tuiY
 }
 
-// renderMapViewport generates ASCII map
+// renderMapViewport (NO CHANGES)
 func (m Model) renderMapViewport(viewWidth, viewHeight int) string {
 	if viewWidth <= 0 {
-		viewWidth = 1 // Avoid zero-size grid
+		viewWidth = 1
 	}
 	if viewHeight <= 0 {
-		viewHeight = 1 // Avoid zero-size grid
+		viewHeight = 1
 	}
 
 	grid := make([][]rune, viewHeight)
 	for i := range grid {
-		// --- THIS IS THE FIX ---
-		// Your error message implies you had 'make([][]rune, viewWidth)'
-		// It must be 'make([]rune, viewWidth)' with only one set of brackets.
 		grid[i] = make([]rune, viewWidth)
-		// ---
 		for j := range grid[i] {
 			grid[i][j] = ' '
 		}
 	}
 
+	// 1. Draw the map
 	for _, polygon := range m.mapPolygons {
 		polyBounds := polygon.BBox()
 		if polyBounds.MaxX < m.viewBounds.MinX ||
 			polyBounds.MinX > m.viewBounds.MaxX ||
 			polyBounds.MaxY < m.viewBounds.MinY ||
 			polyBounds.MinY > m.viewBounds.MaxY {
-			continue // Skip this polygon, it's not in view
+			continue
 		}
 
 		for _, point := range polygon.Points {
 			x, y := m.project(point.X, point.Y, viewWidth, viewHeight)
-			// Draw if projected point is within the TUI grid
 			if x >= 0 && x < viewWidth && y >= 0 && y < viewHeight {
 				grid[y][x] = '.'
 			}
 		}
 	}
 
-	// Plot the station's "house"
+	// 2. Plot the home station "house"
 	if m.stationExists {
 		x, y := m.project(m.stationLon, m.stationLat, viewWidth, viewHeight)
-		// Draw if projected point is within the TUI grid
 		if x >= 0 && x < viewWidth && y >= 0 && y < viewHeight {
 			grid[y][x] = 'H' // 'H' for Home/House
+		}
+	}
+
+	// 3. Draw the packets and callsigns (drawn last, so they're on top)
+	for _, pkt := range m.plottedPackets {
+		x, y := m.project(pkt.Lon, pkt.Lat, viewWidth, viewHeight)
+		if x >= 0 && x < viewWidth && y >= 0 && y < viewHeight {
+			grid[y][x] = '*' // Plot the packet position
+
+			// Draw callsign UNDER the packet
+			if y+1 < viewHeight { // Check if we have space below
+				callRunes := []rune(pkt.Callsign)
+				// Center the callsign under the '*'
+				startOffset := x - (len(callRunes) / 2)
+
+				for i := 0; i < len(callRunes); i++ {
+					plotX := startOffset + i
+					// Check horizontal bounds
+					if plotX >= 0 && plotX < viewWidth {
+						// Only write over empty space
+						if grid[y+1][plotX] == ' ' {
+							grid[y+1][plotX] = callRunes[i]
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -294,21 +313,19 @@ func (m Model) renderMapViewport(viewWidth, viewHeight int) string {
 	return b.String()
 }
 
+// View function (NO CHANGES)
 func (m Model) View() string {
-	// Define the style inside the View, so it recalculates on resize
 	mapStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("63")).
-		Width(m.width - 2).   // Use component's width (minus borders)
-		Height(m.height - 2) // Use component's height (minus borders)
+		Width(m.width - 2).
+		Height(m.height - 2)
 
-	// Get the *content* area size, which is the style's size minus borders/padding
 	hBorders := mapStyle.GetBorderLeftSize() + mapStyle.GetBorderRightSize()
 	vBorders := mapStyle.GetBorderTopSize() + mapStyle.GetBorderBottomSize()
 	hPadding := mapStyle.GetPaddingLeft() + mapStyle.GetPaddingRight()
 	vPadding := mapStyle.GetPaddingTop() + mapStyle.GetPaddingBottom()
 
-	// Note: GetWidth() and GetHeight() on a style are the *outer* dimensions
 	mapViewWidth := mapStyle.GetWidth() - hBorders - hPadding
 	mapViewHeight := mapStyle.GetHeight() - vBorders - vPadding
 
@@ -321,6 +338,5 @@ func (m Model) View() string {
 
 	mapContent := m.renderMapViewport(mapViewWidth, mapViewHeight)
 
-	// Render the final styled block
 	return mapStyle.Render(mapContent)
 }
