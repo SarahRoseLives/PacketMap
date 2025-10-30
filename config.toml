@@ -9,3 +9,6 @@ defaultzoom = 12.8
 type = "APRSIS" # KISS or APRSIS
 device = "192.168.1.243:8001" # blank for APRSIS / Could be serial path or ip:port for KISS
 passcode = 24296 # required only for APRSIS
+
+[msgbar]
+say = true

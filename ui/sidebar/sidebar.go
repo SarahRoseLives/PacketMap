@@ -34,8 +34,10 @@ func (m *Model) AddPacket(callsign string) {
 	m.packets = append([]string{callsign}, m.packets...)
 
 	// Trim the list if it's too long
-	// We subtract 2 to leave room for the header and border
-	maxPackets := m.height - 2
+	// m.height is the total component height (mainHeight from main.go)
+	// -2 for the top/bottom borders
+	// -1 for the "Last Packets" header
+	maxPackets := m.height - 3
 	if maxPackets < 1 {
 		maxPackets = 1
 	}
@@ -49,6 +51,16 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+
+		// --- NEW: Re-trim packet list on resize ---
+		// This handles the case where the window gets smaller
+		maxPackets := m.height - 3
+		if maxPackets < 1 {
+			maxPackets = 1
+		}
+		if len(m.packets) > maxPackets {
+			m.packets = m.packets[:maxPackets]
+		}
 	}
 	return m, nil
 }
@@ -68,23 +80,37 @@ func (m Model) View() string {
 		Width(m.width - 2 - 2). // -2 border, -2 padding
 		Render("Last Packets")
 
-	// Create the list of packets
-	// We fill the rest of the available height
-	contentHeight := (m.height - 2) - 1 // -2 border, -1 header
+	// --- THIS IS THE FIX ---
+	// Build the content string manually to respect the height
+
+	var b strings.Builder
+	b.WriteString(header) // Add header (1 line)
+
+	// Calculate how many lines are left for packets
+	// (Inner Height) - (Header Height)
+	contentHeight := (m.height - 2) - 1
 	if contentHeight < 0 {
 		contentHeight = 0
 	}
 
-	var b strings.Builder
-	for i, call := range m.packets {
-		if i >= contentHeight {
-			break // Stop if we run out of room
+	if contentHeight > 0 { // Only add packets if there is space
+		b.WriteRune('\n') // Add newline after header
+		for i, call := range m.packets {
+			if i >= contentHeight {
+				break // Stop if we run out of room
+			}
+			// Truncate callsign to fit width
+			line := fmt.Sprintf("%.*s", m.width-2-2, call)
+			b.WriteString(line)
+			if i < len(m.packets)-1 && i < contentHeight-1 { // Don't add newline to the very last item
+				b.WriteRune('\n')
+			}
 		}
-		b.WriteString(fmt.Sprintf("%.*s\n", m.width-2-2, call)) // Truncate callsign
 	}
 
-	// Join header and content
-	content := lipgloss.JoinVertical(lipgloss.Left, header, b.String())
-
-	return style.Render(content)
+	// Now, `b.String()` is a single string that has *at most*
+	// `m.height - 2` lines.
+	// We render this string *inside* the box, and the box
+	// will not expand vertically.
+	return style.Render(b.String())
 }

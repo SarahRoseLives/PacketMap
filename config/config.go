@@ -18,7 +18,6 @@ type StationConfig struct {
 	// Passcode removed from here
 }
 
-// --- NEW ---
 // InterfaceConfig holds settings for the TNC/network connection
 type InterfaceConfig struct {
 	Type     string `toml:"type"`
@@ -26,11 +25,20 @@ type InterfaceConfig struct {
 	Passcode int    `toml:"passcode"`
 }
 
+// --- NEW ---
+// MsgbarConfig holds settings for the message bar
+type MsgbarConfig struct {
+	Say bool `toml:"say"`
+}
+
+// --- END NEW ---
+
 // Config holds all application configuration
 type Config struct {
 	Station   StationConfig   `toml:"station"`
 	Map       MapConfig       `toml:"map"`
-	Interface InterfaceConfig `toml:"interface"` // --- ADDED ---
+	Interface InterfaceConfig `toml:"interface"`
+	Msgbar    MsgbarConfig    `toml:"msgbar"` // --- ADDED ---
 }
 
 // LoadConfig reads the configuration from the specified path
