@@ -30,7 +30,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
-	title := "APRS LIVE | SignalsEverywhere"
+	title := "PacketMap"
 
 	// Style for the header
 	style := lipgloss.NewStyle().

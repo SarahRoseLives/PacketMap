@@ -19,7 +19,7 @@ const (
 	aprsisServer = "rotate.aprs.net:14580" // Using unfiltered port, but filter *command* might still work
 	appName      = "PacketMap"
 	appVersion   = "0.1"
-	defaultRadiusKm = 20000 // Default filter radius
+	defaultRadiusKm = 2000 // Default filter radius
 )
 
 // Client represents an active connection to an APRS-IS server
