@@ -2,6 +2,10 @@
 
 PacketMap is a TUI (Terminal User Interface) application for plotting APRS (Automatic Packet Reporting System) data on an ASCII map in real-time.
 
+Download the linux AMD64 Binary Here: https://sarahsforge.dev/products/packetmap-linux
+
+![PacketMap screenshot](packetmap.png)
+
 # 🗺️ Features
 
 Real-time Plotting: Plots APRS position packets on an ASCII map as they are received.
